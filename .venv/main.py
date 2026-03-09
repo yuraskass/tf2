@@ -15,7 +15,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Настройки ID предметов (посмотри их в своей таблице items)
+
 TICKET_ID = 2
 KEY_ID = 1
 
@@ -57,7 +57,7 @@ async def process_purchase(item_id: int, amount: int, request: Request):
             WHERE id = %s
         """, (amount, amount, item_id))
 
-        # Логируем покупку
+        
         cursor.execute(
             "INSERT INTO purchases (item_id, buyer_ip, amount) VALUES (%s, %s, %s)",
             (item_id, client_ip, amount)
@@ -127,7 +127,7 @@ async def get_items():
     return items
 
 
-# Кнопка 1: Купить билеты
+
 @app.post("/api/buy/tickets")
 async def buy_tickets(request: Request, data: PurchaseRequest): # Теперь берем данные из модели
     return await process_purchase(TICKET_ID, data.amount, request)
@@ -136,7 +136,7 @@ async def sale_tickets(request: Request, data: PurchaseRequest): # Теперь 
     return await process_sale(TICKET_ID, data.amount, request)
 
 
-# Кнопка 2: Купить ключи
+
 @app.post("/api/sale/keys")
 async def sale_keys(request: Request, data: PurchaseRequest): # Теперь берем данные из модели
     return await process_sale(KEY_ID, data.amount, request)
