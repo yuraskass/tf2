@@ -7,16 +7,14 @@ from fastapi.responses import RedirectResponse
 import requests
 import threading
 import time
-BASE_URL = "https://mean-vans-laugh.loca.lt"
+BASE_URL = "https://full-states-shop.loca.lt"
 current_key_price = "0.00"
 class PurchaseRequest(BaseModel):
     amount: int
-    buyer_name: str = "Anonymous"
-    steam_id: str = None
+
 class SaleRequest(BaseModel):
     amount: int
-    buyer_name: str = "Anonymous"
-    steam_id: str = None
+
 app = FastAPI()
 
 app.add_middleware(
@@ -43,6 +41,7 @@ def get_db():
 
 def update_steam_price():
     global current_key_price
+    # Убедись, что KEY_ID определен в начале файла (обычно это 1)
     url = "https://steamcommunity.com/market/priceoverview/?appid=440&currency=5&market_hash_name=Mann%20Co.%20Supply%20Crate%20Key"
 
     while True:
@@ -51,16 +50,31 @@ def update_steam_price():
             if response.status_code == 200:
                 data = response.json()
                 if "lowest_price" in data:
-                    # Сохраняем новую цену
-                    current_key_price = data["lowest_price"]
+                    raw_price = data["lowest_price"]
+                    clean_price = "".join(c for c in raw_price if c.isdigit() or c == ',').replace(',', '.')
+                    current_key_price = float(clean_price)
 
-                    print(f"--- [УСПЕХ] Цена обновлена: {current_key_price} ---")
+                    # --- ОБНОВЛЕНИЕ БАЗЫ ДАННЫХ ---
+                    conn = get_db()
+                    cursor = conn.cursor()
+                    try:
+                        # Обновляем колонку price для предмета с KEY_ID
+                        query = "UPDATE items SET price = %s WHERE id = %s"
+                        cursor.execute(query, (current_key_price, KEY_ID))
+                        conn.commit()
+                        print(f"--- [БАЗА] Цена ключа в БД обновлена: {current_key_price} ---")
+                    except Exception as db_err:
+                        print(f"Ошибка записи в БД: {db_err}")
+                    finally:
+                        cursor.close()
+                        conn.close()
+                    # ------------------------------
+
             else:
                 print(f"--- [ОШИБКА] Steam ответил кодом: {response.status_code} ---")
 
         except Exception as e:
             print(f"Ошибка обновления цены: {e}")
-
 
         time.sleep(30)
 
@@ -72,6 +86,8 @@ threading.Thread(target=update_steam_price, daemon=True).start()
 @app.get("/api/get-key-price")
 async def get_price():
     return {"price": current_key_price}
+
+
 @app.get("/api/auth/login")
 async def steam_login():
     from urllib.parse import urlencode
@@ -221,17 +237,12 @@ async def process_sale(item_id: int, amount: int,  request: Request):
 
        
         cursor.execute("""
-            INSERT INTO sales (item_id, seller_name, seller_ip, steam_id, amount) 
-            VALUES (%s, %s, %s, %s, %s)
-        """, (item_id, seller_name, client_ip, steam_id, amount))
+            INSERT INTO sales (item_id, seller_ip, amount) 
+            VALUES (%s, %s, %s)
+        """, (item_id,  client_ip,  amount))
 
         conn.commit()
-        return {
-            "status": "success",
-            "message": f"Товар успешно возвращен: {amount} шт.",
-            "seller": seller_name,
-            "steam_id": steam_id
-        }
+        return {"status": "success", "message": f"Продано {amount} шт.", "your_ip": client_ip}
 
     except Exception as e:
         conn.rollback()
