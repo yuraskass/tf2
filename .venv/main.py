@@ -65,7 +65,7 @@ def update_steam_price():
         time.sleep(30)
 
 
-# Запускаем поток (daemon=True значит, что поток умрет вместе с сервером)
+
 threading.Thread(target=update_steam_price, daemon=True).start()
 
 
@@ -78,7 +78,7 @@ async def steam_login():
 
     steam_openid_url = "https://steamcommunity.com/openid/login"
 
-    # ПРОВЕРЬ КАЖДУЮ БУКВУ ТУТ:
+    
     params = {
         "openid.ns": "http://specs.openid.net/auth/2.0",
         "openid.mode": "checkid_setup",
@@ -88,14 +88,14 @@ async def steam_login():
         "openid.claimed_id": "http://specs.openid.net/auth/2.0/identifier_select"
     }
 
-    # Используем urlencode, чтобы спецсимволы в BASE_URL не ломали ссылку
+    
     query_string = urlencode(params)
     auth_url = f"{steam_openid_url}?{query_string}"
 
     return RedirectResponse(auth_url)
 
 
-STEAM_API_KEY = "0C382E6F13B23067DAFF84CD09F7027C"  # Вставь свой ключ сюда
+STEAM_API_KEY = "0C382E6F13B23067DAFF84CD09F7027C"  
 
 
 @app.get("/api/auth/callback")
@@ -106,10 +106,10 @@ async def steam_callback(request: Request):
     if not claimed_id:
         raise HTTPException(status_code=400, detail="Ошибка входа через Steam")
 
-    # 1. Получаем SteamID64
+   
     steam_id = claimed_id.split("/")[-1]
 
-    # 2. Получаем данные профиля (Имя и Аватарку) через Steam API
+   
     username = "Anonymous"  # Значение по умолчанию
     try:
         api_url = f"https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?key={STEAM_API_KEY}&steamids={steam_id}"
@@ -124,7 +124,7 @@ async def steam_callback(request: Request):
     except Exception as e:
         print(f"Ошибка запроса к Steam: {e}")
 
-    # 3. СОХРАНЯЕМ В БАЗУ ДАННЫХ
+   
     conn = get_db()
     cursor = conn.cursor()
     try:
@@ -161,7 +161,7 @@ async def process_purchase(item_id: int, amount: int, request: Request):
     cursor = conn.cursor(dictionary=True)
 
     try:
-        # Проверяем наличие нужного количества
+  
         cursor.execute("SELECT quantity FROM items WHERE id = %s", (item_id,))
         item = cursor.fetchone()
 
@@ -171,7 +171,7 @@ async def process_purchase(item_id: int, amount: int, request: Request):
         if item['quantity'] < amount:
             raise HTTPException(status_code=400, detail=f"Недостаточно товара! Осталось: {item['quantity']}")
 
-        # Обновляем остаток и счетчик продаж
+        
         cursor.execute("""
             UPDATE items 
             SET quantity = quantity - %s, sold_count = sold_count + %s 
@@ -202,7 +202,7 @@ async def process_sale(item_id: int, amount: int,  request: Request):
     cursor = conn.cursor(dictionary=True)
 
     try:
-        # 1. Проверяем, сколько товара числится как "проданное"
+      
         cursor.execute("SELECT sold_count FROM items WHERE id = %s", (item_id,))
         item = cursor.fetchone()
 
@@ -212,15 +212,14 @@ async def process_sale(item_id: int, amount: int,  request: Request):
         if item['sold_count'] < amount:
             raise HTTPException(status_code=400, detail=f"Недостаточно проданных товаров для возврата! В базе всего: {item['sold_count']}")
 
-        # 2. Обновляем таблицу предметов (возвращаем на склад, убираем из проданных)
+        
         cursor.execute("""
             UPDATE items 
             SET quantity = quantity + %s, sold_count = sold_count - %s 
             WHERE id = %s
         """, (amount, amount, item_id))
 
-        # 3. Логируем продажу (возврат) в таблицу sales со всеми данными
-        # ВАЖНО: используем твое имя колонки seller_name
+       
         cursor.execute("""
             INSERT INTO sales (item_id, seller_name, seller_ip, steam_id, amount) 
             VALUES (%s, %s, %s, %s, %s)
@@ -295,7 +294,7 @@ async def get_history():
 async def get_purch():
     conn = get_db()
     cursor = conn.cursor(dictionary=True)
-    # Используем правильные имена столбцов из твоего скриншота базы
+    
     query = """
         SELECT 
             s.id, 
