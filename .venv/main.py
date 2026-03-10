@@ -5,7 +5,10 @@ from fastapi import Body
 from pydantic import BaseModel
 from fastapi.responses import RedirectResponse
 import requests
+import threading
+import time
 BASE_URL = "https://mean-vans-laugh.loca.lt"
+current_key_price = "0.00"
 class PurchaseRequest(BaseModel):
     amount: int
     buyer_name: str = "Anonymous"
@@ -38,6 +41,37 @@ def get_db():
     )
 
 
+def update_steam_price():
+    global current_key_price
+    url = "https://steamcommunity.com/market/priceoverview/?appid=440&currency=5&market_hash_name=Mann%20Co.%20Supply%20Crate%20Key"
+
+    while True:
+        try:
+            response = requests.get(url, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                if "lowest_price" in data:
+                    # Сохраняем новую цену
+                    current_key_price = data["lowest_price"]
+
+                    print(f"--- [УСПЕХ] Цена обновлена: {current_key_price} ---")
+            else:
+                print(f"--- [ОШИБКА] Steam ответил кодом: {response.status_code} ---")
+
+        except Exception as e:
+            print(f"Ошибка обновления цены: {e}")
+
+
+        time.sleep(30)
+
+
+# Запускаем поток (daemon=True значит, что поток умрет вместе с сервером)
+threading.Thread(target=update_steam_price, daemon=True).start()
+
+
+@app.get("/api/get-key-price")
+async def get_price():
+    return {"price": current_key_price}
 @app.get("/api/auth/login")
 async def steam_login():
     from urllib.parse import urlencode
