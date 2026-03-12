@@ -9,6 +9,7 @@ import threading
 import time
 BASE_URL = "https://full-states-shop.loca.lt"
 current_key_price = "0.00"
+current_ticket_price = "0.00"
 class PurchaseRequest(BaseModel):
     amount: int
 
@@ -41,6 +42,7 @@ def get_db():
 
 def update_steam_price():
     global current_key_price
+    global current_ticket_price
     # Убедись, что KEY_ID определен в начале файла (обычно это 1)
     url = "https://steamcommunity.com/market/priceoverview/?appid=440&currency=5&market_hash_name=Mann%20Co.%20Supply%20Crate%20Key"
 
@@ -75,8 +77,41 @@ def update_steam_price():
 
         except Exception as e:
             print(f"Ошибка обновления цены: {e}")
+        urll = "https://steamcommunity.com/market/priceoverview/?appid=440&currency=5&market_hash_name=Tour%20of%20Duty%20Ticket"
+
+        try:
+            response = requests.get(urll, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                if "lowest_price" in data:
+                    raw_price = data["lowest_price"]
+                    clean_price = "".join(c for c in raw_price if c.isdigit() or c == ',').replace(',', '.')
+                    current_ticket_price = float(clean_price)
+
+                    # --- ОБНОВЛЕНИЕ БАЗЫ ДАННЫХ ---
+                    conn = get_db()
+                    cursor = conn.cursor()
+                    try:
+                        # Обновляем колонку price для предмета с KEY_ID
+                        query = "UPDATE items SET price = %s WHERE id = %s"
+                        cursor.execute(query, (current_ticket_price, TICKET_ID))
+                        conn.commit()
+                        print(f"--- [БАЗА] Цена ключа в БД обновлена: {current_ticket_price} ---")
+                    except Exception as db_err:
+                        print(f"Ошибка записи в БД: {db_err}")
+                    finally:
+                        cursor.close()
+                        conn.close()
+                    # ------------------------------
+
+            else:
+                print(f"--- [ОШИБКА] Steam ответил кодом: {response.status_code} ---")
+
+        except Exception as e:
+            print(f"Ошибка обновления цены: {e}")
 
         time.sleep(30)
+
 
 
 
