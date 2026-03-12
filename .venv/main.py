@@ -96,7 +96,7 @@ def update_steam_price():
                         query = "UPDATE items SET price = %s WHERE id = %s"
                         cursor.execute(query, (current_ticket_price, TICKET_ID))
                         conn.commit()
-                        print(f"--- [БАЗА] Цена ключа в БД обновлена: {current_ticket_price} ---")
+                        print(f"--- [БАЗА] Цена билета в БД обновлена: {current_ticket_price} ---")
                     except Exception as db_err:
                         print(f"Ошибка записи в БД: {db_err}")
                     finally:
@@ -121,6 +121,10 @@ threading.Thread(target=update_steam_price, daemon=True).start()
 @app.get("/api/get-key-price")
 async def get_price():
     return {"price": current_key_price}
+
+@app.get("/api/get-ticket-price")
+async def get_price():
+    return {"price": current_ticket_price}
 
 
 @app.get("/api/auth/login")
