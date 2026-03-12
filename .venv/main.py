@@ -118,13 +118,11 @@ def update_steam_price():
 threading.Thread(target=update_steam_price, daemon=True).start()
 
 
-@app.get("/api/get-key-price")
-async def get_price():
-    return {"price": current_key_price}
 
-@app.get("/api/get-ticket-price")
+
+@app.get("/api/get-price")
 async def get_price():
-    return {"price": current_ticket_price}
+    return {"ticket": current_ticket_price,"key": current_key_price}
 
 
 @app.get("/api/auth/login")
