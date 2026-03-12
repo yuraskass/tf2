@@ -7,7 +7,7 @@ from fastapi.responses import RedirectResponse
 import requests
 import threading
 import time
-BASE_URL = "https://full-states-shop.loca.lt"
+BASE_URL = "https://vast-tools-rule.loca.lt"
 current_key_price = "0.00"
 current_ticket_price = "0.00"
 class PurchaseRequest(BaseModel):
@@ -300,6 +300,16 @@ async def get_items():
     cursor.close()
     conn.close()
     return items
+
+@app.get("/api/items-count")
+async def get_items_count():
+    conn = get_db()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("SELECT name,quantity,sold_count FROM items ")
+    items = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return(items)
 
 
 
