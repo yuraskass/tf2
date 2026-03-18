@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "@a2seven/yoo-checkout": "^1.1.4"
+  }
+}

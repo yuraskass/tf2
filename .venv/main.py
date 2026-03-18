@@ -7,9 +7,14 @@ from fastapi.responses import RedirectResponse
 import requests
 import threading
 import time
-BASE_URL = "https://vast-tools-rule.loca.lt"
-current_key_price = "0.00"
-current_ticket_price = "0.00"
+from yookassa import Configuration, Payment
+import uuid
+Configuration.account_id = '1303074'
+Configuration.secret_key = 'test_OiewiLMBt-oAz7nzN08eegZ27OqqQabvbrJlptWevfw'
+BASE_URL = "http://127.0.0.1:8000"
+current_key_price = "0.0"
+current_ticket_price = "0.0"
+
 class PurchaseRequest(BaseModel):
     amount: int
 
@@ -36,6 +41,7 @@ def get_db():
         user="root",
         password="",
         database="tf2_lavk",
+        port=3307,
         connect_timeout=5
     )
 
@@ -110,7 +116,7 @@ def update_steam_price():
         except Exception as e:
             print(f"Ошибка обновления цены: {e}")
 
-        time.sleep(30)
+        time.sleep(60)
 
 
 
@@ -119,10 +125,79 @@ threading.Thread(target=update_steam_price, daemon=True).start()
 
 
 
+@app.post("/api/create-payment")
+async def create_payment(request: PurchaseRequest):
+    # Рассчитываем сумму (например, количество ключей * цену из твоей переменной)
+    # Используем цену покупки (key-buy), которую ты считал ранее
+    total_amount = round(float(current_key_price * 0.74) * request.amount, 2)
+
+    if total_amount < 1.0:
+        raise HTTPException(status_code=400, detail="Слишком маленькая сумма")
+
+    idempotence_key = str(uuid.uuid4()) # Ключ защиты от повторных списаний
+
+    try:
+        payment = Payment.create({
+            "amount": {
+                "value": str(total_amount),
+                "currency": "RUB"
+            },
+            "confirmation": {
+                "type": "redirect",
+                "return_url": f"{BASE_URL}" # Куда вернуть юзера после оплаты
+            },
+            "capture": True, # Списать деньги сразу
+            "description": f"Покупка ключей TF2 ({request.amount} шт.)"
+        }, idempotence_key)
+
+        # Возвращаем ссылку на оплату фронтенду
+        return {
+            "payment_id": payment.id,
+            "confirmation_url": payment.confirmation.confirmation_url
+        }
+
+    except Exception as e:
+        print(f"Ошибка ЮKassa: {e}")
+        raise HTTPException(status_code=500, detail="Ошибка при создании платежа")
+
+
+@app.get("/api/check-payment/{payment_id}")
+async def check_payment(payment_id: str):
+    try:
+        # Запрашиваем данные о платеже у ЮKassa
+        payment = Payment.find_one(payment_id)
+
+        if payment.status == 'succeeded':
+            # ТУТ ЛОГИКА: Деньги пришли!
+            # Можно обновить баланс в БД или выдать товар
+            return {
+                "status": "paid",
+                "message": "Оплата прошла успешно!",
+                "amount": payment.amount.value
+            }
+
+        elif payment.status == 'pending':
+            return {"status": "pending", "message": "Ожидаем оплату от пользователя..."}
+
+        elif payment.status == 'canceled':
+            return {"status": "canceled", "message": "Платеж отменен или произошла ошибка."}
+
+        else:
+            return {"status": payment.status, "message": "Платеж в обработке."}
+
+    except Exception as e:
+        print(f"Ошибка проверки платежа: {e}")
+        raise HTTPException(status_code=500, detail="Не удалось проверить статус")
 
 @app.get("/api/get-price")
 async def get_price():
-    return {"ticket": current_ticket_price,"key": current_key_price}
+
+    return {
+        "ticket-SELL": round(current_ticket_price * 0.79, 2),
+        "key-SELL": round(current_key_price * 0.79, 2),
+        "ticket-buy": round(current_ticket_price * 0.74, 2),
+        "key-buy": round(current_key_price * 0.74, 2)
+    }
 
 
 @app.get("/api/auth/login")
@@ -148,7 +223,7 @@ async def steam_login():
     return RedirectResponse(auth_url)
 
 
-STEAM_API_KEY = "0C382E6F13B23067DAFF84CD09F7027C"  
+STEAM_API_KEY = "0C382E6F13B23067DAFF84CD09F7027C"
 
 
 @app.get("/api/auth/callback")
@@ -156,43 +231,40 @@ async def steam_callback(request: Request):
     params = dict(request.query_params)
     claimed_id = params.get("openid.claimed_id")
 
+    # Получаем IP напрямую из объекта запроса
+    client_ip = request.client.host
+
     if not claimed_id:
         raise HTTPException(status_code=400, detail="Ошибка входа через Steam")
 
-   
     steam_id = claimed_id.split("/")[-1]
+    username = "Anonymous"
 
-   
-    username = "Anonymous"  # Значение по умолчанию
     try:
-        api_url = f"https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?key={STEAM_API_KEY}&steamids={steam_id}"
+        api_url = f"https://api.steampowered.com{STEAM_API_KEY}&steamids={steam_id}"
         resp = requests.get(api_url)
         data = resp.json()
-
-        # Печатаем ответ в консоль PyCharm, чтобы увидеть ошибку
-        print(f"DEBUG STEAM API: {data}")
-
         if 'response' in data and 'players' in data['response'] and len(data['response']['players']) > 0:
             username = data['response']['players'][0].get('personaname', 'Anonymous')
     except Exception as e:
         print(f"Ошибка запроса к Steam: {e}")
 
-   
     conn = get_db()
     cursor = conn.cursor()
     try:
-        # Теперь добавляем и username тоже!
+        # Добавляем last_ip в INSERT и в UPDATE
         query = """
-            INSERT INTO users (steam_id, username) 
-            VALUES (%s, %s) 
+            INSERT INTO users (steam_id, username, last_ip) 
+            VALUES (%s, %s, %s) 
             ON DUPLICATE KEY UPDATE 
                 username = VALUES(username), 
+                last_ip = VALUES(last_ip),
                 last_login = CURRENT_TIMESTAMP
         """
-        cursor.execute(query, (steam_id, username))
+        cursor.execute(query, (steam_id, username, client_ip))
         conn.commit()
     except Exception as e:
-        print(f"Ошибка БД при сохранении юзера: {e}")
+        print(f"Ошибка БД при сохранении IP ({client_ip}): {e}")
     finally:
         cursor.close()
         conn.close()
@@ -201,8 +273,10 @@ async def steam_callback(request: Request):
         "status": "success",
         "steam_id": steam_id,
         "username": username,
-        "message": f"Привет, {username}! вы залогинились!."
+        "ip": client_ip,
+        "message": f"Привет, {username}! Вы залогинились с IP {client_ip}."
     }
+
 
 # Общая логика покупки
 async def process_purchase(item_id: int, amount: int, request: Request):
